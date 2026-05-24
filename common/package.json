@@ -1,0 +1,27 @@
+{
+  "name": "@singhisme456/medium-common",
+  "version": "1.0.0",
+  "description": "Shared validation schemas and TypeScript types for the Medium app.",
+  "type": "module",
+  "main": "./dist/zod.js",
+  "types": "./dist/zod.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/zod.d.ts",
+      "import": "./dist/zod.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}
