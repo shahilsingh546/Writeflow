@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client/edge";
 import { withAccelerate } from "@prisma/extension-accelerate";
 import { sign } from 'hono/jwt'
 import {signinInput, signupInput} from "@singhisme456/medium-common"
+import { error } from 'node:console';
 
 export const userRouter = new Hono<{
     Bindings :{
@@ -34,7 +35,12 @@ userRouter.post('/signup', async(c)=>{
       name: body.name
     }
   });
-
+  if(!c.env.SECRET_KEY){
+    c.status(500);
+    return c.json({
+      error : "Secret Key is not configured"
+    });
+  }
   const token = await sign({id:user.id}, c.env.SECRET_KEY, "HS256")
   console.log(user);
   return c.json({jwt: token})

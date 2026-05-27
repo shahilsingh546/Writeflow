@@ -3,7 +3,6 @@ import { PrismaClient } from "@prisma/client/edge";
 import { withAccelerate } from "@prisma/extension-accelerate";
 import { verify } from 'hono/jwt'
 import {createBlogInput, CreateBlogInput, updateBlogInput} from "@singhisme456/medium-common";
-import { success } from 'zod';
 
 export const blogRouter = new Hono<{
     Bindings :{
@@ -17,17 +16,30 @@ export const blogRouter = new Hono<{
 
 blogRouter.use('/*', async(c,next)=>{
   const header = c.req.header("Authorization") || "";
-  const token = header.split(" ")[1]
-  const res = await verify(token,c.env.SECRET_KEY,"HS256");
-  if(res.id){
-    if(typeof res.id === "string"){
+  const token = header.startsWith("Bearer ") ? header.split(" ")[1] : header;
+
+  if (!token || token === "null") {
+    c.status(403);
+    return c.json({
+      error : "unathroised user"
+    })
+  }
+
+  try {
+    const res = await verify(token,c.env.SECRET_KEY,"HS256");
+    if(res.id && typeof res.id === "string"){
       c.set("userID", res.id)
       console.log("valid user")
-    await next();
+      await next();
+      return;
     }
-  }
-  else{
+
     c.status(403)
+    return c.json({
+      error : "unathroised user"
+    })
+  } catch(e) {
+    c.status(403);
     return c.json({
       error : "unathroised user"
     })
@@ -104,7 +116,18 @@ blogRouter.get('/bulk', async(c)=>{
         accelerateUrl:c.env.DATABASE_URL
     }).$extends(withAccelerate());
 
-    const posts = await prisma.post.findMany();
+    const posts = await prisma.post.findMany({
+      select: {
+        content:true,
+        title:true,
+        id:true,
+        author: {
+          select:{
+            name:true
+          }
+        }
+      }
+    });
     return c.json({
         posts
     })
@@ -121,6 +144,16 @@ blogRouter.get('/:id', async(c)=>{
         where: {
             id:id
         },
+        select :{
+          id:true,
+          title:true,
+          content:true,
+          author : {
+            select:{
+              name:true
+            }
+          }
+        }
     })
     return c.json({
         blog
@@ -133,4 +166,3 @@ blogRouter.get('/:id', async(c)=>{
     })
   }
 })
-
