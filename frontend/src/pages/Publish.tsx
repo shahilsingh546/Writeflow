@@ -54,6 +54,10 @@ export const Publish = () => {
         published: nextPublished,
       };
       const response = id ? await api.put("/blog", payload) : await api.post("/blog", payload);
+      
+      // Update the published state after successful save
+      setPublished(nextPublished);
+      
       navigate(`/blog/${id || response.data.postID}`);
     } catch (e) {
       setError(getApiError(e));

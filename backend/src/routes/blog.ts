@@ -165,17 +165,15 @@ blogRouter.put("/", requireAuth, async (c) => {
 });
 
 // Specific routes must come before /:id to avoid being caught by the wildcard
-// GET /bulk - Get all blogs (public route, but optional auth to show user's unpublished posts)
+// GET /bulk - Get all blogs (public route, only shows published posts)
 blogRouter.get("/bulk", optionalAuth, async (c) => {
   const prisma = getPrisma(c.env.DATABASE_URL);
   const { page, limit, skip } = getPagination(c);
   const query = c.req.query("q")?.trim();
   const authorId = c.req.query("authorId");
-  const status = c.req.query("status");
-  const published = status === "draft" ? false : status === "all" ? undefined : true;
 
   const where = {
-    ...(published === undefined ? {} : { published }),
+    published: true,
     ...(authorId ? { authorID: authorId } : {}),
     ...(query
       ? {
@@ -397,7 +395,13 @@ blogRouter.delete("/:id", requireAuth, async (c) => {
 blogRouter.get("/:id", optionalAuth, async (c) => {
   const prisma = getPrisma(c.env.DATABASE_URL);
   const id = c.req.param("id");
-  const userID = c.get("userID");
+  let userID: string | undefined;
+  
+  try {
+    userID = c.get("userID");
+  } catch {
+    userID = undefined;
+  }
 
   const post = await prisma.post.findUnique({
     where: {
@@ -426,8 +430,11 @@ blogRouter.get("/:id", optionalAuth, async (c) => {
     return jsonError(c, 404, "Post not found");
   }
 
-  if (!post.published && post.authorID !== userID) {
-    return jsonError(c, 403, "This draft is private");
+  // Only block if post is not published AND user is not the author
+  if (!post.published) {
+    if (!userID || post.authorID !== userID) {
+      return jsonError(c, 403, "This draft is private");
+    }
   }
 
   return c.json({ success: true, blog: post });

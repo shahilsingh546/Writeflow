@@ -6,7 +6,7 @@ import { useBlogs } from "../hooks";
 
 export const Blogs = () => {
   const [search, setSearch] = useState("");
-  const { loading, error, blogs, pagination, loadMore } = useBlogs({ q: search, status: "all" });
+  const { loading, error, blogs, pagination, loadMore } = useBlogs({ q: search });
 
   return (
     <div className="min-h-screen bg-white">
