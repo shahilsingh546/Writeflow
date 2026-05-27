@@ -1,6 +1,6 @@
-# Medium
+# Writeflow
 
-A full-stack Medium-style blogging app with a React frontend, a Cloudflare Workers API, Prisma, and shared Zod validation types.
+A full-stack writing app with a React frontend, a Cloudflare Workers API, Prisma, and shared Zod validation types.
 
 ## Tech Stack
 

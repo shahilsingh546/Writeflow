@@ -7,15 +7,20 @@ export interface Blog{
     "title":string,
     "id":string,
     "author":{
-        "name":string
+        "name":string | null
     }
 }
 
-export const useBlog = ({id} : {id:string}) =>{
+export const useBlog = ({id} : {id:string | undefined}) =>{
     const[loading,setLoading]= useState(true)
-    const[blog,setBlog]= useState();
+    const[blog,setBlog]= useState<Blog | null>(null);
 
     useEffect(()=>{
+        if (!id) {
+            setLoading(false);
+            return;
+        }
+
         axios.get(`${BACKEND_URL}/api/v1/blog/${id}`, {
             headers : {
                 Authorization : `Bearer ${localStorage.getItem("token")}`
@@ -34,7 +39,7 @@ export const useBlog = ({id} : {id:string}) =>{
 
 export const useBlogs = () =>{
     const[loading, setLoading] = useState(true)
-    const[blogs,setBlogs] = useState([])
+    const[blogs,setBlogs] = useState<Blog[]>([])
 
     useEffect(()=>{
         console.log("before sending reqs")
