@@ -1,46 +1,85 @@
-import { Link } from "react-router-dom"
+import { Link } from "react-router-dom";
+import { getReadingTime } from "../utils/markdown";
 
 interface BlogCardProps {
-    id:string,
-    authorName: string,
-    title:string,
-    content:string,
-    publishedDate:string
+  id: string;
+  authorId: string;
+  authorName: string;
+  title: string;
+  subtitle?: string | null;
+  content: string;
+  publishedDate: string;
+  published: boolean;
+  showActions?: boolean;
+  onDelete?: () => void;
 }
 
-export const BlogCard = ({authorName, title, content, publishedDate, id}: BlogCardProps)=>{
-    return <Link to={`/blog/${id}`}>
-    <div className="border-b border-slate-200 pb-4 p-4 w-screen max-w-screen-md cursor-pointer">
-       <div className="flex"> 
-             <Avatar authorName={authorName} size="small"/>
-        <div className="font-extralight pl-2 text-sm flex justify-center flex-col">{authorName}</div>
-        <div className= "flex justify-center flex-col pl-2">
-            <Circle/>
+export const BlogCard = ({
+  authorName,
+  authorId,
+  title,
+  subtitle,
+  content,
+  publishedDate,
+  id,
+  published,
+  showActions = false,
+  onDelete,
+}: BlogCardProps) => {
+  return (
+    <article className="border-b border-stone-200 p-5">
+      <Link to={`/blog/${id}`}>
+        <div className="flex flex-wrap items-center gap-2 text-sm text-stone-500">
+          <Avatar authorName={authorName} size="small" />
+          <span className="font-medium text-stone-700">{authorName}</span>
+          <Circle />
+          <span>{publishedDate}</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              published ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+            }`}
+          >
+            {published ? "Published" : "Draft"}
+          </span>
         </div>
-        <div className="pl-2 font-thin text-slate-400 text-sm flex justify-center flex-col">{publishedDate} </div>
+
+        <h2 className="pt-3 text-2xl font-bold text-stone-950">{title}</h2>
+        {subtitle ? <p className="pt-2 text-sm font-medium text-stone-600">{subtitle}</p> : null}
+        <p className="pt-3 text-stone-600">{content.slice(0, 140)}{content.length > 140 ? "..." : ""}</p>
+        <div className="pt-4 text-sm text-stone-400">{getReadingTime(content)} min read</div>
+      </Link>
+
+      {showActions ? (
+        <div className="mt-4 flex gap-3">
+          <Link to={`/publish/${id}`} className="text-sm font-semibold text-stone-700 hover:underline">
+            Edit
+          </Link>
+          <button onClick={onDelete} className="text-sm font-semibold text-red-600 hover:underline">
+            Delete
+          </button>
+          <Link to={`/author/${authorId}`} className="text-sm font-semibold text-stone-500 hover:underline">
+            Author page
+          </Link>
         </div>
-        <div className="text-xl font-semibold pt-2">
-            {title}
-        </div>
-        <div className="text-md font-thin">
-            {content.slice(0,100)+ "...."}
-        </div>
-        <div className="text-slate-400 text-sm font-thin pt-4">
-            {`${Math.ceil(content.length/100)} min read `}
-        </div>
+      ) : null}
+    </article>
+  );
+};
+
+export function Circle() {
+  return <div className="h-1 w-1 rounded-full bg-stone-400" />;
+}
+
+export function Avatar({ authorName, size = "small" }: { authorName: string; size: "small" | "big" }) {
+  return (
+    <div
+      className={`relative inline-flex items-center justify-center overflow-hidden rounded-full bg-stone-900 ${
+        size === "small" ? "h-6 w-6" : "h-10 w-10"
+      }`}
+    >
+      <span className={`${size === "small" ? "text-xs" : "text-sm"} font-semibold text-white`}>
+        {(authorName || "U")[0].toUpperCase()}
+      </span>
     </div>
-    </Link>
-}
-
-export function Circle(){
-    return<div className="h-1 w-1 rounded-full bg-slate-500">
-
-    </div>
-}
-
-export function Avatar({authorName,size="small"
-}: {authorName:string, size:"small" | "big"}){
-    return <div className={`relative inline-flex items-center justify-center ${size==="small" ? "w-6 h-6" : "w-10 h-10"}overflow-hidden bg-gray-100 rounded-full dark:bg-gray-600`}>
-    <span className={`${size==="small" ? "text-xs" : "text-md"} font-extralight text-gray-600 dark:text-gray-300`}>{authorName[0]}</span>
-</div>
+  );
 }

@@ -1,62 +1,74 @@
-import axios from "axios"
-import {useEffect, useState } from "react"
-import { BACKEND_URL } from "../config"
+import { useEffect, useState } from "react";
+import { api, type BlogPost, type Pagination } from "../api";
 
-export interface Blog{
-    "content":string,
-    "title":string,
-    "id":string,
-    "author":{
-        "name":string | null
-    }
-}
+export type Blog = BlogPost;
 
-export const useBlog = ({id} : {id:string | undefined}) =>{
-    const[loading,setLoading]= useState(true)
-    const[blog,setBlog]= useState<Blog | null>(null);
+export const useBlog = ({ id }: { id: string | undefined }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [blog, setBlog] = useState<Blog | null>(null);
 
-    useEffect(()=>{
-        if (!id) {
-            setLoading(false);
-            return;
-        }
-
-        axios.get(`${BACKEND_URL}/api/v1/blog/${id}`, {
-            headers : {
-                Authorization : `Bearer ${localStorage.getItem("token")}`
-            }
-        }).
-        then(res =>{
-            setBlog(res.data.blog);
-            setLoading(false)
-        })
-    },[id])
-    return {
-        loading,
-        blog
-    }
-}
-
-export const useBlogs = () =>{
-    const[loading, setLoading] = useState(true)
-    const[blogs,setBlogs] = useState<Blog[]>([])
-
-    useEffect(()=>{
-        console.log("before sending reqs")
-        console.log(`Bearer ${localStorage.getItem("token")}`)
-        axios.get(`${BACKEND_URL}/api/v1/blog/bulk`, {
-            headers: {
-                Authorization : `Bearer ${localStorage.getItem("token")}`
-            }
-        })
-        .then(res =>{
-            setBlogs(res.data.posts);
-            setLoading(false)
-        })
-    },[]);
-    return {
-        loading,
-        blogs
+  useEffect(() => {
+    if (!id) {
+      setLoading(false);
+      return;
     }
 
-}
+    setLoading(true);
+    api
+      .get(`/blog/${id}`)
+      .then((res) => {
+        setBlog(res.data.blog);
+        setError("");
+      })
+      .catch(() => setError("Unable to load this post"))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  return {
+    loading,
+    error,
+    blog,
+  };
+};
+
+export const useBlogs = ({ q = "", status = "published" }: { q?: string; status?: string }) => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [blogs, setBlogs] = useState<Blog[]>([]);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+    setBlogs([]);
+  }, [q, status]);
+
+  useEffect(() => {
+    setLoading(true);
+    api
+      .get("/blog/bulk", {
+        params: {
+          q,
+          status,
+          page,
+          limit: 8,
+        },
+      })
+      .then((res) => {
+        setBlogs((current) => (page === 1 ? res.data.posts : [...current, ...res.data.posts]));
+        setPagination(res.data.pagination);
+        setError("");
+      })
+      .catch(() => setError("Unable to load posts"))
+      .finally(() => setLoading(false));
+  }, [page, q, status]);
+
+  return {
+    loading,
+    error,
+    blogs,
+    pagination,
+    loadMore: () => setPage((current) => current + 1),
+  };
+};

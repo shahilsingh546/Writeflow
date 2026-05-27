@@ -1,73 +1,143 @@
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Appbar } from "../componets/Appbar";
-import axios from "axios";
-import { BACKEND_URL } from "../config";
-import { useNavigate } from "react-router-dom";
-import type { ChangeEvent} from "react";
-import { useState } from "react";
+import { api, getApiError } from "../api";
+import { getReadingTime, markdownToHtml } from "../utils/markdown";
 
 export const Publish = () => {
-    const [title, setTitle] = useState("");
-    const [description, setDescription] = useState("");
-    const navigate = useNavigate();
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [title, setTitle] = useState("");
+  const [subtitle, setSubtitle] = useState("");
+  const [content, setContent] = useState("");
+  const [published, setPublished] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-    return <div>
-        <Appbar />
-        <div className="flex justify-center w-full pt-8"> 
-            <div className="max-w-screen-lg w-full">
-                <input onChange={(e) => {
-                    setTitle(e.target.value)
-                }} type="text" className="w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" placeholder="Title" />
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
 
-                <TextEditor onChange={(e) => {
-                    setDescription(e.target.value)
-                }} />
-                <button onClick={async () => {
-                    const token = localStorage.getItem("token");
-                    if (!token) {
-                        alert("Please sign in before publishing.");
-                        navigate("/signin");
-                        return;
-                    }
+    api
+      .get(`/blog/${id}`)
+      .then((res) => {
+        setTitle(res.data.blog.title);
+        setSubtitle(res.data.blog.subtitle || "");
+        setContent(res.data.blog.content);
+        setPublished(res.data.blog.published);
+      })
+      .catch(() => setError("Unable to load this post for editing"));
+  }, [id]);
 
-                    try {
-                        const response = await axios.post(`${BACKEND_URL}/api/v1/blog`, {
-                            title,
-                            content: description
-                        }, {
-                            headers: {
-                                Authorization: `Bearer ${token}`
-                            }
-                        });
-                        navigate(`/blog/${response.data.postID}`)
-                    } catch (e) {
-                        console.log("publish error -> ", e);
-                        if (axios.isAxiosError(e)) {
-                            const status = e.response?.status;
-                            const message = e.response?.data?.error || e.response?.data?.msg || e.message;
-                            alert(`Error while publishing post${status ? ` (${status})` : ""}: ${message}`);
-                            return;
-                        }
-                        alert("Error while publishing post");
-                    }
-                }} type="submit" className="mt-4 inline-flex items-center px-5 py-2.5 text-sm font-medium text-center text-white bg-blue-700 rounded-lg focus:ring-4 focus:ring-blue-200 dark:focus:ring-blue-900 hover:bg-blue-800">
-                    Publish post
-                </button>
-            </div>
+  async function savePost(nextPublished: boolean) {
+    setError("");
+
+    if (title.trim().length < 3) {
+      setError("Title must be at least 3 characters");
+      return;
+    }
+
+    if (content.trim().length < 20) {
+      setError("Content must be at least 20 characters");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const payload = {
+        id,
+        title,
+        subtitle,
+        content,
+        published: nextPublished,
+      };
+      const response = id ? await api.put("/blog", payload) : await api.post("/blog", payload);
+      navigate(`/blog/${id || response.data.postID}`);
+    } catch (e) {
+      setError(getApiError(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-white">
+      <Appbar />
+      <main className="mx-auto max-w-5xl px-5 py-8">
+        <div className="flex flex-col gap-4 border-b border-stone-200 pb-6 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">{id ? "Edit post" : "New post"}</h1>
+            <p className="mt-2 text-sm text-stone-500">{getReadingTime(content)} min read</p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setPreview((current) => !current)}
+              className="rounded-full border border-stone-300 px-4 py-2 text-sm font-semibold hover:bg-stone-50"
+            >
+              {preview ? "Edit" : "Preview"}
+            </button>
+            <button
+              onClick={() => savePost(false)}
+              disabled={loading}
+              className="rounded-full border border-stone-900 px-4 py-2 text-sm font-semibold hover:bg-stone-50 disabled:opacity-60"
+            >
+              Save draft
+            </button>
+            <button
+              onClick={() => savePost(!published)}
+              disabled={loading}
+              className="rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white hover:bg-stone-800 disabled:opacity-60"
+            >
+              {published ? "Unpublish" : "Publish"}
+            </button>
+          </div>
         </div>
-    </div>
-}
 
+        {error ? <div className="mt-6 rounded-lg bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
 
-function TextEditor({ onChange }: {onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void}) {
-    return <div className="mt-2">
-        <div className="w-full mb-4 ">
-            <div className="flex items-center justify-between border">
-            <div className="my-2 bg-white rounded-b-lg w-full">
-                <label className="sr-only">Publish post</label>
-                <textarea onChange={onChange} id="editor" rows={8} className="focus:outline-none block w-full px-0 text-sm text-gray-800 bg-white border-0 pl-2" placeholder="Write an article..." required />
+        <div className="mt-8">
+          {preview ? (
+            <article className="rounded-lg border border-stone-200 p-6">
+              <div className="mb-4">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-bold ${
+                    published ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  {published ? "Published" : "Draft"}
+                </span>
+              </div>
+              <h2 className="text-4xl font-black">{title || "Untitled post"}</h2>
+              {subtitle ? <p className="mt-3 text-lg text-stone-500">{subtitle}</p> : null}
+              <div dangerouslySetInnerHTML={{ __html: markdownToHtml(content || "Start writing...") }} />
+            </article>
+          ) : (
+            <div className="grid gap-4">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full rounded-lg border border-stone-300 p-3 text-lg font-semibold outline-none focus:border-stone-900"
+                placeholder="Title"
+              />
+              <input
+                value={subtitle}
+                onChange={(e) => setSubtitle(e.target.value)}
+                className="w-full rounded-lg border border-stone-300 p-3 text-sm outline-none focus:border-stone-900"
+                placeholder="Subtitle"
+              />
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                rows={16}
+                className="w-full rounded-lg border border-stone-300 p-3 text-sm leading-7 outline-none focus:border-stone-900"
+                placeholder="Write with Markdown. Try ## headings, **bold**, *italic*, and `code`."
+              />
             </div>
+          )}
         </div>
-       </div>
+      </main>
     </div>
-    
-}
+  );
+};

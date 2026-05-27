@@ -1,168 +1,404 @@
-import { Hono } from 'hono'
+import { Hono } from "hono";
+import type { Context } from "hono";
+import { verify } from "hono/jwt";
 import { PrismaClient } from "@prisma/client/edge";
 import { withAccelerate } from "@prisma/extension-accelerate";
-import { verify } from 'hono/jwt'
-import {createBlogInput, CreateBlogInput, updateBlogInput} from "@singhisme456/medium-common";
+import { z } from "zod";
 
-export const blogRouter = new Hono<{
-    Bindings :{
-        DATABASE_URL: string;
+type Bindings = {
+  DATABASE_URL: string;
   SECRET_KEY: string;
-    }, 
-    Variables :{
-        "userID" :string
-    }
-}>();
+};
 
-blogRouter.use('/*', async(c,next)=>{
+type Variables = {
+  userID: string;
+};
+
+const postInput = z.object({
+  title: z.string().min(3).max(140),
+  subtitle: z.string().max(220).optional(),
+  content: z.string().min(20),
+  published: z.boolean().default(false),
+});
+
+const updatePostInput = postInput.extend({
+  id: z.string(),
+});
+
+export const blogRouter = new Hono<{ Bindings: Bindings; Variables: Variables }>();
+
+function getPrisma(databaseUrl: string) {
+  return new PrismaClient({
+    accelerateUrl: databaseUrl,
+  }).$extends(withAccelerate());
+}
+
+function jsonError(c: Context, status: number, message: string) {
+  c.status(status as 400);
+  return c.json({ success: false, error: message });
+}
+
+function getPagination(c: Context) {
+  const page = Math.max(Number(c.req.query("page") || "1"), 1);
+  const limit = Math.min(Math.max(Number(c.req.query("limit") || "8"), 1), 20);
+
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+  };
+}
+
+blogRouter.use("/*", async (c, next) => {
   const header = c.req.header("Authorization") || "";
   const token = header.startsWith("Bearer ") ? header.split(" ")[1] : header;
 
   if (!token || token === "null") {
-    c.status(403);
-    return c.json({
-      error : "unathroised user"
-    })
+    return jsonError(c, 401, "Please sign in to continue");
   }
 
   try {
-    const res = await verify(token,c.env.SECRET_KEY,"HS256");
-    if(res.id && typeof res.id === "string"){
-      c.set("userID", res.id)
-      console.log("valid user")
-      await next();
-      return;
+    const payload = await verify(token, c.env.SECRET_KEY, "HS256");
+
+    if (!payload.id || typeof payload.id !== "string") {
+      return jsonError(c, 401, "Invalid session");
     }
 
-    c.status(403)
-    return c.json({
-      error : "unathroised user"
-    })
-  } catch(e) {
-    c.status(403);
-    return c.json({
-      error : "unathroised user"
-    })
-  }
-})
-
-blogRouter.post('/', async(c)=>{
-    const prisma = new PrismaClient({
-    accelerateUrl: c.env.DATABASE_URL,
-  }).$extends(withAccelerate());
-
-  const body = await c.req.json();
-  const {success} = await createBlogInput.safeParse(body);
-  if(!success){
-    c.status(411);
-    return c.json({msg:"Invalid input formats for blog creation"})
-  }
-  else{
-  const authorId = c.get("userID")
-  try{
-    const res = await prisma.post.create({
-        data: {
-            title: body.title,
-            content : body.content,
-            published:body.published,
-            authorID: authorId
-        }
-    });
-    if(res.id){
-        return c.json({
-            msg : "successfully created post",
-            postID: res.id
-        })
-    }
-  }
-  catch(e){
-    return c.json({
-        msg: e,
-        error: "something wrong"
-    })
-  }
+    c.set("userID", payload.id);
+    await next();
+  } catch {
+    return jsonError(c, 401, "Session expired. Please sign in again");
   }
 });
 
-blogRouter.put('/', async(c)=>{
+blogRouter.post("/", async (c) => {
   const body = await c.req.json();
-  const prisma = new PrismaClient({
-    accelerateUrl: c.env.DATABASE_URL
-  }).$extends(withAccelerate());
-  const {success} = await updateBlogInput.safeParse(body);
+  const parsed = postInput.safeParse(body);
 
-  if(!success){
-    c.status(411);
-    return c.json({
-        msg:"Invalid inputs for blog updation"
-    })
+  if (!parsed.success) {
+    return jsonError(c, 400, parsed.error.issues[0]?.message || "Invalid post details");
   }
-  const blog = await prisma.post.update({
-    where:{
-        id: body.id
+
+  const prisma = getPrisma(c.env.DATABASE_URL);
+  const post = await prisma.post.create({
+    data: {
+      title: parsed.data.title,
+      subtitle: parsed.data.subtitle || "",
+      content: parsed.data.content,
+      published: parsed.data.published,
+      authorID: c.get("userID"),
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  c.status(201);
+  return c.json({ success: true, postID: post.id });
+});
+
+blogRouter.put("/", async (c) => {
+  const body = await c.req.json();
+  const parsed = updatePostInput.safeParse(body);
+
+  if (!parsed.success) {
+    return jsonError(c, 400, parsed.error.issues[0]?.message || "Invalid post details");
+  }
+
+  const prisma = getPrisma(c.env.DATABASE_URL);
+  const existingPost = await prisma.post.findUnique({
+    where: {
+      id: parsed.data.id,
+    },
+    select: {
+      authorID: true,
+    },
+  });
+
+  if (!existingPost) {
+    return jsonError(c, 404, "Post not found");
+  }
+
+  if (existingPost.authorID !== c.get("userID")) {
+    return jsonError(c, 403, "You can only update your own posts");
+  }
+
+  const post = await prisma.post.update({
+    where: {
+      id: parsed.data.id,
     },
     data: {
-        title:body.title,
-        content:body.content
-    }
-  })
-  return c.json({
-    id: blog.id
-  })
+      title: parsed.data.title,
+      subtitle: parsed.data.subtitle || "",
+      content: parsed.data.content,
+      published: parsed.data.published,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return c.json({ success: true, id: post.id });
 });
 
-blogRouter.get('/bulk', async(c)=>{
-    const prisma = new PrismaClient({
-        accelerateUrl:c.env.DATABASE_URL
-    }).$extends(withAccelerate());
-
-    const posts = await prisma.post.findMany({
-      select: {
-        content:true,
-        title:true,
-        id:true,
-        author: {
-          select:{
-            name:true
-          }
-        }
-      }
-    });
-    return c.json({
-        posts
-    })
-})
-blogRouter.get('/:id', async(c)=>{
-  const prisma = new PrismaClient({
-    accelerateUrl:c.env.DATABASE_URL
-  }).$extends(withAccelerate());
-  
+blogRouter.delete("/:id", async (c) => {
   const id = c.req.param("id");
-  console.log("inside get id",id)
-  try{
-    const blog = await prisma.post.findUnique({
-        where: {
-            id:id
-        },
-        select :{
-          id:true,
-          title:true,
-          content:true,
-          author : {
-            select:{
-              name:true
-            }
-          }
+  const prisma = getPrisma(c.env.DATABASE_URL);
+  const existingPost = await prisma.post.findUnique({
+    where: {
+      id,
+    },
+    select: {
+      authorID: true,
+    },
+  });
+
+  if (!existingPost) {
+    return jsonError(c, 404, "Post not found");
+  }
+
+  if (existingPost.authorID !== c.get("userID")) {
+    return jsonError(c, 403, "You can only delete your own posts");
+  }
+
+  await prisma.post.delete({
+    where: {
+      id,
+    },
+  });
+
+  return c.json({ success: true });
+});
+
+blogRouter.get("/bulk", async (c) => {
+  const prisma = getPrisma(c.env.DATABASE_URL);
+  const { page, limit, skip } = getPagination(c);
+  const query = c.req.query("q")?.trim();
+  const authorId = c.req.query("authorId");
+  const status = c.req.query("status");
+  const published = status === "draft" ? false : status === "all" ? undefined : true;
+
+  const where = {
+    ...(published === undefined ? {} : { published }),
+    ...(authorId ? { authorID: authorId } : {}),
+    ...(query
+      ? {
+          OR: [
+            { title: { contains: query, mode: "insensitive" as const } },
+            { subtitle: { contains: query, mode: "insensitive" as const } },
+            { content: { contains: query, mode: "insensitive" as const } },
+          ],
         }
-    })
-    return c.json({
-        blog
-    })
+      : {}),
+  };
+
+  const [posts, total] = await Promise.all([
+    prisma.post.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: {
+        updatedAt: "desc",
+      },
+      select: {
+        id: true,
+        title: true,
+        subtitle: true,
+        content: true,
+        published: true,
+        createdAt: true,
+        updatedAt: true,
+        authorID: true,
+        author: {
+          select: {
+            id: true,
+            name: true,
+            bio: true,
+          },
+        },
+      },
+    }),
+    prisma.post.count({ where }),
+  ]);
+
+  return c.json({
+    success: true,
+    posts,
+    pagination: {
+      page,
+      limit,
+      total,
+      hasMore: skip + posts.length < total,
+    },
+  });
+});
+
+blogRouter.get("/mine", async (c) => {
+  const prisma = getPrisma(c.env.DATABASE_URL);
+  const { page, limit, skip } = getPagination(c);
+  const status = c.req.query("status");
+  const query = c.req.query("q")?.trim();
+  const published = status === "published" ? true : status === "draft" ? false : undefined;
+
+  const where = {
+    authorID: c.get("userID"),
+    ...(published === undefined ? {} : { published }),
+    ...(query
+      ? {
+          OR: [
+            { title: { contains: query, mode: "insensitive" as const } },
+            { subtitle: { contains: query, mode: "insensitive" as const } },
+            { content: { contains: query, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+  };
+
+  const [posts, total] = await Promise.all([
+    prisma.post.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: {
+        updatedAt: "desc",
+      },
+      select: {
+        id: true,
+        title: true,
+        subtitle: true,
+        content: true,
+        published: true,
+        createdAt: true,
+        updatedAt: true,
+        authorID: true,
+        author: {
+          select: {
+            id: true,
+            name: true,
+            bio: true,
+          },
+        },
+      },
+    }),
+    prisma.post.count({ where }),
+  ]);
+
+  return c.json({
+    success: true,
+    posts,
+    pagination: {
+      page,
+      limit,
+      total,
+      hasMore: skip + posts.length < total,
+    },
+  });
+});
+
+blogRouter.get("/author/:id", async (c) => {
+  const prisma = getPrisma(c.env.DATABASE_URL);
+  const { page, limit, skip } = getPagination(c);
+  const authorId = c.req.param("id");
+
+  const [author, posts, total] = await Promise.all([
+    prisma.user.findUnique({
+      where: {
+        id: authorId,
+      },
+      select: {
+        id: true,
+        name: true,
+        bio: true,
+        createdAt: true,
+      },
+    }),
+    prisma.post.findMany({
+      where: {
+        authorID: authorId,
+        published: true,
+      },
+      skip,
+      take: limit,
+      orderBy: {
+        updatedAt: "desc",
+      },
+      select: {
+        id: true,
+        title: true,
+        subtitle: true,
+        content: true,
+        published: true,
+        createdAt: true,
+        updatedAt: true,
+        authorID: true,
+        author: {
+          select: {
+            id: true,
+            name: true,
+            bio: true,
+          },
+        },
+      },
+    }),
+    prisma.post.count({
+      where: {
+        authorID: authorId,
+        published: true,
+      },
+    }),
+  ]);
+
+  if (!author) {
+    return jsonError(c, 404, "Author not found");
   }
-  catch(e){
-    c.status(411);
-    return c.json({
-        msg: "Error while fetching blog post"
-    })
+
+  return c.json({
+    success: true,
+    author,
+    posts,
+    pagination: {
+      page,
+      limit,
+      total,
+      hasMore: skip + posts.length < total,
+    },
+  });
+});
+
+blogRouter.get("/:id", async (c) => {
+  const prisma = getPrisma(c.env.DATABASE_URL);
+  const id = c.req.param("id");
+
+  const post = await prisma.post.findUnique({
+    where: {
+      id,
+    },
+    select: {
+      id: true,
+      title: true,
+      subtitle: true,
+      content: true,
+      published: true,
+      createdAt: true,
+      updatedAt: true,
+      authorID: true,
+      author: {
+        select: {
+          id: true,
+          name: true,
+          bio: true,
+        },
+      },
+    },
+  });
+
+  if (!post) {
+    return jsonError(c, 404, "Post not found");
   }
-})
+
+  if (!post.published && post.authorID !== c.get("userID")) {
+    return jsonError(c, 403, "This draft is private");
+  }
+
+  return c.json({ success: true, blog: post });
+});

@@ -12,7 +12,7 @@ export const Blog = ()=>{
             <Appbar />
             <div className="h-screen flex flex-col justify-center">
                 <div className="flex justify-center">
-                    <Spinner />
+                    {loading ? <Spinner /> : <div className="text-sm text-stone-500">Post not found</div>}
                 </div>
             </div>
         </div>

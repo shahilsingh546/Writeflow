@@ -1,43 +1,47 @@
-import type { Blog } from "../hooks"
-import { Appbar } from "./Appbar"
-import { Avatar } from "./BlogCard"
+import { Link } from "react-router-dom";
+import type { Blog } from "../hooks";
+import { getReadingTime, markdownToHtml } from "../utils/markdown";
+import { Appbar } from "./Appbar";
+import { Avatar } from "./BlogCard";
 
-export const FullBlog = ({ blog }: {blog: Blog}) => {
-    return <div>
-        <Appbar />
-        <div className="flex justify-center">
-            <div className="grid grid-cols-12 px-10 w-full max-w-screen-xl pt-12">
-                <div className="col-span-8">
-                    <div className="text-5xl font-extrabold">
-                        {blog.title}
-                    </div>
-                    <div className="text-slate-500 pt-2">
-                        Post on 2nd December 2023
-                    </div>
-                    <div className="pt-4">
-                        {blog.content}
-                    </div>
-                </div>
-                <div className="col-span-4">
-                    <div className="text-slate-600 text-lg">
-                        Author
-                    </div>
-                    <div className="flex w-full">
-                        <div className="pr-4 flex flex-col justify-center">
-                            <Avatar size="big" authorName={blog.author.name || "Anonymous"} />
-                        </div>
-                        <div>
-                            <div className="text-xl font-bold">
-                                {blog.author.name || "Anonymous"}
-                            </div>
-                            <div className="pt-2 text-slate-500">
-                                Random catch phrase about the author's ability to grab the user's attention
-                            </div>
-                        </div>
-                    </div>  
-                </div>
-                
+export const FullBlog = ({ blog }: { blog: Blog }) => {
+  const authorName = blog.author.name || "Anonymous";
+
+  return (
+    <div className="min-h-screen bg-white">
+      <Appbar />
+      <main className="mx-auto grid max-w-6xl gap-10 px-5 py-10 lg:grid-cols-[1fr_280px]">
+        <article>
+          <div className="mb-4">
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-bold ${
+                blog.published ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+              }`}
+            >
+              {blog.published ? "Published" : "Draft"}
+            </span>
+          </div>
+          <h1 className="text-4xl font-black leading-tight text-stone-950 sm:text-5xl">{blog.title}</h1>
+          {blog.subtitle ? <p className="mt-4 text-xl leading-8 text-stone-500">{blog.subtitle}</p> : null}
+          <div className="mt-4 text-sm text-stone-500">
+            Updated {new Date(blog.updatedAt).toLocaleDateString()} · {getReadingTime(blog.content)} min read
+          </div>
+          <div className="mt-8" dangerouslySetInnerHTML={{ __html: markdownToHtml(blog.content) }} />
+        </article>
+
+        <aside className="h-fit rounded-lg border border-stone-200 p-5">
+          <div className="text-sm font-semibold text-stone-500">Author</div>
+          <div className="mt-4 flex gap-3">
+            <Avatar size="big" authorName={authorName} />
+            <div>
+              <Link to={`/author/${blog.author.id}`} className="text-lg font-bold hover:underline">
+                {authorName}
+              </Link>
+              <p className="mt-2 text-sm leading-6 text-stone-500">{blog.author.bio || "Writing on Writeflow."}</p>
             </div>
-        </div>
+          </div>
+        </aside>
+      </main>
     </div>
-}
+  );
+};

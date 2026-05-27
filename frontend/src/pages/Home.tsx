@@ -45,9 +45,6 @@ export const Home = () => {
         <section>
           <div className="mx-auto flex min-h-[calc(100vh-73px)] max-w-4xl flex-col justify-center px-5 py-16 sm:px-8">
             <div className="max-w-3xl">
-              <p className="mb-5 text-sm font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                Members-only writing space
-              </p>
               <h1 className="text-5xl font-black leading-tight tracking-normal sm:text-6xl">
                 Writeflow
               </h1>

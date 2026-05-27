@@ -1,6 +1,6 @@
 # Writeflow
 
-A full-stack writing app with a React frontend, a Cloudflare Workers API, Prisma, and shared Zod validation types.
+A full-stack private publishing platform with authenticated writing, draft management, profiles, search, pagination, and owner-only post controls.
 
 ## Tech Stack
 
@@ -8,6 +8,17 @@ A full-stack writing app with a React frontend, a Cloudflare Workers API, Prisma
 - Backend: Hono on Cloudflare Workers, Prisma, Prisma Accelerate, JWT auth
 - Shared package: Zod schemas and TypeScript types in `common`
 - Database: PostgreSQL through Prisma
+
+## Features
+
+- Secure authentication with hashed passwords and expiring JWT sessions.
+- Protected frontend and backend routes for reading, writing, editing, and profile access.
+- User-owned post management with create, edit, delete, draft, publish, and unpublish flows.
+- Markdown editor with preview mode, subtitle support, validation, and reading time calculation.
+- My Posts dashboard with status filters, search, empty states, and pagination.
+- Published feed with search and "Load more" pagination.
+- User profile page and public author pages for published posts.
+- Centralized API errors, proper HTTP status codes, and basic Cloudflare Worker rate limiting.
 
 ## Project Structure
 
@@ -33,6 +44,13 @@ Build the shared package when changing validation schemas:
 ```sh
 cd common
 npm run build
+```
+
+Generate Prisma Client after schema changes:
+
+```sh
+cd backend
+npx prisma generate
 ```
 
 Run the backend locally:
@@ -85,12 +103,21 @@ npm run build
 
 ## API Overview
 
-- `POST /api/v1/user/signup` creates a user and returns a JWT.
-- `POST /api/v1/user/signin` signs in and returns a JWT.
-- `GET /api/v1/blog/bulk` returns all posts.
-- `GET /api/v1/blog/:id` returns one post.
+- `POST /api/v1/user/signup` creates a user with a hashed password and returns a JWT.
+- `POST /api/v1/user/signin` verifies credentials and returns a JWT.
+- `GET /api/v1/user/me` returns the signed-in user's profile.
+- `PUT /api/v1/user/me` updates the signed-in user's profile.
+- `GET /api/v1/blog/bulk` returns paginated published posts with search/filter query params.
+- `GET /api/v1/blog/mine` returns paginated posts owned by the signed-in user.
+- `GET /api/v1/blog/author/:id` returns an author's published posts.
+- `GET /api/v1/blog/:id` returns one post and blocks private drafts from other users.
 - `POST /api/v1/blog` creates a post with a bearer token.
-- `PUT /api/v1/blog` updates a post with a bearer token.
+- `PUT /api/v1/blog` updates only the signed-in user's own post.
+- `DELETE /api/v1/blog/:id` deletes only the signed-in user's own post.
+
+## Database
+
+Prisma migrations live in `backend/prisma/migrations`. The schema includes users, bios, posts, subtitles, published/draft status, ownership relations, and timestamps.
 
 ## Deployment
 
