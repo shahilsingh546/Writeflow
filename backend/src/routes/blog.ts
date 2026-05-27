@@ -49,7 +49,28 @@ function getPagination(c: Context) {
   };
 }
 
-blogRouter.use("/*", async (c, next) => {
+// Middleware to optionally verify token (for public routes that show published content)
+async function optionalAuth(c: Context, next: Function) {
+  const header = c.req.header("Authorization") || "";
+  const token = header.startsWith("Bearer ") ? header.split(" ")[1] : header;
+
+  if (token && token !== "null") {
+    try {
+      const payload = await verify(token, c.env.SECRET_KEY, "HS256");
+
+      if (payload.id && typeof payload.id === "string") {
+        c.set("userID", payload.id);
+      }
+    } catch {
+      // Token is invalid, but we allow the request to continue for public content
+    }
+  }
+
+  await next();
+}
+
+// Middleware to require authentication
+async function requireAuth(c: Context, next: Function) {
   const header = c.req.header("Authorization") || "";
   const token = header.startsWith("Bearer ") ? header.split(" ")[1] : header;
 
@@ -69,9 +90,10 @@ blogRouter.use("/*", async (c, next) => {
   } catch {
     return jsonError(c, 401, "Session expired. Please sign in again");
   }
-});
+}
 
-blogRouter.post("/", async (c) => {
+// CREATE POST - requires auth
+blogRouter.post("/", requireAuth, async (c) => {
   const body = await c.req.json();
   const parsed = postInput.safeParse(body);
 
@@ -97,7 +119,8 @@ blogRouter.post("/", async (c) => {
   return c.json({ success: true, postID: post.id });
 });
 
-blogRouter.put("/", async (c) => {
+// UPDATE POST - requires auth
+blogRouter.put("/", requireAuth, async (c) => {
   const body = await c.req.json();
   const parsed = updatePostInput.safeParse(body);
 
@@ -141,36 +164,9 @@ blogRouter.put("/", async (c) => {
   return c.json({ success: true, id: post.id });
 });
 
-blogRouter.delete("/:id", async (c) => {
-  const id = c.req.param("id");
-  const prisma = getPrisma(c.env.DATABASE_URL);
-  const existingPost = await prisma.post.findUnique({
-    where: {
-      id,
-    },
-    select: {
-      authorID: true,
-    },
-  });
-
-  if (!existingPost) {
-    return jsonError(c, 404, "Post not found");
-  }
-
-  if (existingPost.authorID !== c.get("userID")) {
-    return jsonError(c, 403, "You can only delete your own posts");
-  }
-
-  await prisma.post.delete({
-    where: {
-      id,
-    },
-  });
-
-  return c.json({ success: true });
-});
-
-blogRouter.get("/bulk", async (c) => {
+// Specific routes must come before /:id to avoid being caught by the wildcard
+// GET /bulk - Get all blogs (public route, but optional auth to show user's unpublished posts)
+blogRouter.get("/bulk", optionalAuth, async (c) => {
   const prisma = getPrisma(c.env.DATABASE_URL);
   const { page, limit, skip } = getPagination(c);
   const query = c.req.query("q")?.trim();
@@ -233,7 +229,8 @@ blogRouter.get("/bulk", async (c) => {
   });
 });
 
-blogRouter.get("/mine", async (c) => {
+// GET /mine - Get user's posts - requires auth
+blogRouter.get("/mine", requireAuth, async (c) => {
   const prisma = getPrisma(c.env.DATABASE_URL);
   const { page, limit, skip } = getPagination(c);
   const status = c.req.query("status");
@@ -295,7 +292,8 @@ blogRouter.get("/mine", async (c) => {
   });
 });
 
-blogRouter.get("/author/:id", async (c) => {
+// GET /author/:id - Get author's published posts (public route)
+blogRouter.get("/author/:id", optionalAuth, async (c) => {
   const prisma = getPrisma(c.env.DATABASE_URL);
   const { page, limit, skip } = getPagination(c);
   const authorId = c.req.param("id");
@@ -365,9 +363,41 @@ blogRouter.get("/author/:id", async (c) => {
   });
 });
 
-blogRouter.get("/:id", async (c) => {
+// DELETE must come before GET /:id
+blogRouter.delete("/:id", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const prisma = getPrisma(c.env.DATABASE_URL);
+  const existingPost = await prisma.post.findUnique({
+    where: {
+      id,
+    },
+    select: {
+      authorID: true,
+    },
+  });
+
+  if (!existingPost) {
+    return jsonError(c, 404, "Post not found");
+  }
+
+  if (existingPost.authorID !== c.get("userID")) {
+    return jsonError(c, 403, "You can only delete your own posts");
+  }
+
+  await prisma.post.delete({
+    where: {
+      id,
+    },
+  });
+
+  return c.json({ success: true });
+});
+
+// GET /:id - Get single blog (public route with optional auth)
+blogRouter.get("/:id", optionalAuth, async (c) => {
   const prisma = getPrisma(c.env.DATABASE_URL);
   const id = c.req.param("id");
+  const userID = c.get("userID");
 
   const post = await prisma.post.findUnique({
     where: {
@@ -396,7 +426,7 @@ blogRouter.get("/:id", async (c) => {
     return jsonError(c, 404, "Post not found");
   }
 
-  if (!post.published && post.authorID !== c.get("userID")) {
+  if (!post.published && post.authorID !== userID) {
     return jsonError(c, 403, "This draft is private");
   }
 
